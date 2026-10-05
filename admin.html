@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flyer Inventory - Admin Summary Dashboard</title>
+  <title>Vikas Admin Dashboard - Flyer Inventory</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -12,12 +12,11 @@
     <!-- Header -->
     <header class="flex justify-between items-center mb-8 bg-white p-5 rounded-lg shadow-sm border border-slate-200">
       <div>
-        <!-- Line number ~16 par header section mein -->
-<h1 class="text-2xl font-bold text-slate-900">Vikas Admin Dashboard</h1>
-<p class="text-sm text-slate-500">Overall Inventory & Distribution Analytics</p>
+        <h1 class="text-2xl font-bold text-slate-900">Vikas Admin Dashboard</h1>
+        <p class="text-sm text-slate-500">Overall Inventory & Distribution Analytics</p>
       </div>
       <div class="text-right">
-        <span id="admin-badge" class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-1 rounded">Checking Access...</span>
+        <span id="admin-badge" class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-1 rounded">Admin Authorized</span>
         <div id="user-email" class="text-sm font-medium text-slate-700 mt-1">vikas.p@xindus.net</div>
       </div>
     </header>
@@ -67,9 +66,121 @@
     <section class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
       <div class="flex justify-between items-center mb-4">
         <h2 class="text-lg font-bold">Recent Distribution & Stock Movement Audit Log</h2>
-        <button onclick="loadSummaryData()" class="text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded">Refresh Data</button>
+        <button onclick="loadSummaryData()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded border border-slate-300">Refresh Data</button>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse">
           <thead>
-            <tr class="bg-slate-50 text-slate-600 text
+            <tr class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b">
+              <th class="p-3">Date/Time</th>
+              <th class="p-3">Type</th>
+              <th class="p-3">Flyer Type</th>
+              <th class="p-3">Qty</th>
+              <th class="p-3">Source / Dest</th>
+              <th class="p-3">Customer ID / Vendor</th>
+            </tr>
+          </thead>
+          <tbody id="logs-tbody" class="divide-y text-sm">
+            <!-- Dynamic Log rows -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // Supabase Credentials Configured
+    const SUPABASE_URL = 'https://mhvxlgqkfxghpkjfvude.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_jOedpjipxRUlzsisHe1yqg_4gWCjqNM';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function loadSummaryData() {
+      // 1. Fetch Inventory Data
+      const { data: inventory, error } = await supabase.from('inventory').select('*');
+      
+      let delhi = { '1kg': 0, '2kg': 0, '3kg': 0 };
+      let surat = { '1kg': 0, '2kg': 0, '3kg': 0 };
+      let jaipur = { '1kg': 0, '2kg': 0, '3kg': 0 };
+
+      let totalStockCount = 0;
+
+      if (inventory) {
+        inventory.forEach(item => {
+          totalStockCount += item.quantity;
+          if (item.city === 'Delhi') delhi[item.flyer_type] = item.quantity;
+          if (item.city === 'Surat') surat[item.flyer_type] = item.quantity;
+          if (item.city === 'Jaipur') jaipur[item.flyer_type] = item.quantity;
+        });
+      }
+
+      // Update KPI Cards
+      document.getElementById('total-stock').innerText = totalStockCount;
+      document.getElementById('delhi-stock').innerText = delhi['1kg'] + delhi['2kg'] + delhi['3kg'];
+      document.getElementById('surat-stock').innerText = surat['1kg'] + surat['2kg'] + surat['3kg'];
+      document.getElementById('jaipur-stock').innerText = jaipur['1kg'] + jaipur['2kg'] + jaipur['3kg'];
+
+      // Populate Matrix Table
+      const matrixTbody = document.getElementById('matrix-tbody');
+      matrixTbody.innerHTML = `
+        <tr>
+          <td class="p-3 font-medium">Delhi (Main Hub)</td>
+          <td class="p-3">${delhi['1kg']}</td>
+          <td class="p-3">${delhi['2kg']}</td>
+          <td class="p-3">${delhi['3kg']}</td>
+          <td class="p-3 font-bold text-slate-900">${delhi['1kg'] + delhi['2kg'] + delhi['3kg']}</td>
+        </tr>
+        <tr>
+          <td class="p-3 font-medium">Surat Branch</td>
+          <td class="p-3">${surat['1kg']}</td>
+          <td class="p-3">${surat['2kg']}</td>
+          <td class="p-3">${surat['3kg']}</td>
+          <td class="p-3 font-bold text-slate-900">${surat['1kg'] + surat['2kg'] + surat['3kg']}</td>
+        </tr>
+        <tr>
+          <td class="p-3 font-medium">Jaipur Branch</td>
+          <td class="p-3">${jaipur['1kg']}</td>
+          <td class="p-3">${jaipur['2kg']}</td>
+          <td class="p-3">${jaipur['3kg']}</td>
+          <td class="p-3 font-bold text-slate-900">${jaipur['1kg'] + jaipur['2kg'] + jaipur['3kg']}</td>
+        </tr>
+      `;
+
+      // 2. Fetch Transactions Log
+      const { data: txs } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      const logsTbody = document.getElementById('logs-tbody');
+      logsTbody.innerHTML = '';
+
+      if (txs && txs.length > 0) {
+        txs.forEach(tx => {
+          const dateStr = new Date(tx.created_at).toLocaleString();
+          const route = tx.transaction_type === 'TRANSFER_OUT' 
+            ? `${tx.source_city} ➔ ${tx.destination_city}` 
+            : (tx.source_city || tx.destination_city);
+
+          const entity = tx.customer_id ? `Customer: ${tx.customer_id}` : (tx.vendor_name ? `Vendor: ${tx.vendor_name}` : '-');
+
+          logsTbody.innerHTML += `
+            <tr>
+              <td class="p-3 text-slate-500 text-xs">${dateStr}</td>
+              <td class="p-3"><span class="font-semibold px-2 py-0.5 text-xs rounded bg-slate-100">${tx.transaction_type}</span></td>
+              <td class="p-3 font-medium">${tx.flyer_type}</td>
+              <td class="p-3 font-bold">${tx.quantity}</td>
+              <td class="p-3 text-slate-600">${route}</td>
+              <td class="p-3 font-medium text-slate-800">${entity}</td>
+            </tr>
+          `;
+        });
+      } else {
+        logsTbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No transactions recorded yet.</td></tr>`;
+      }
+    }
+
+    loadSummaryData();
+  </script>
+</body>
+</html>
