@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flyer Inventory & Distribution Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="flex justify-between items-center mb-8 bg-white p-4 rounded-lg shadow-sm">
+      <h1 class="text-xl font-bold text-slate-900">Flyer Tracker</h1>
+      <div id="user-info" class="text-sm text-slate-600">Loading...</div>
+    </header>
+
+    <!-- Stock Dashboard -->
+    <section class="mb-8">
+      <h2 class="text-lg font-semibold mb-4">Current Stock Levels</h2>
+      <div id="stock-grid" class="grid grid-cols-3 gap-4">
+        <!-- Stock items populated via JS -->
+      </div>
+    </section>
+
+    <!-- Action Forms -->
+    <section class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
+      <h2 class="text-lg font-semibold mb-4">Record Transaction</h2>
+      
+      <form id="tx-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">Transaction Type</label>
+          <select id="tx-type" class="w-full border rounded p-2" onchange="toggleFields()">
+            <option value="OUTWARD_CUSTOMER">Customer Distribution</option>
+            <option value="INWARD_VENDOR">Vendor Inward (Delhi Only)</option>
+            <option value="TRANSFER_OUT">Branch Transfer (Delhi -> Branch)</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">Flyer Type</label>
+            <select id="flyer-type" class="w-full border rounded p-2">
+              <option value="1kg">1kg Flyer</option>
+              <option value="2kg">2kg Flyer</option>
+              <option value="3kg">3kg Flyer</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Quantity</label>
+            <input type="number" id="qty" min="1" class="w-full border rounded p-2" required />
+          </div>
+        </div>
+
+        <!-- Conditional Fields -->
+        <div id="field-vendor" class="hidden">
+          <label class="block text-sm font-medium mb-1">Vendor Name</label>
+          <input type="text" id="vendor-name" class="w-full border rounded p-2" placeholder="Enter vendor name" />
+        </div>
+
+        <div id="field-customer">
+          <label class="block text-sm font-medium mb-1">Customer ID</label>
+          <input type="text" id="customer-id" class="w-full border rounded p-2" placeholder="e.g. CUST-10492" />
+        </div>
+
+        <div id="field-transfer" class="hidden">
+          <label class="block text-sm font-medium mb-1">Destination Branch</label>
+          <select id="dest-city" class="w-full border rounded p-2">
+            <option value="Surat">Surat</option>
+            <option value="Jaipur">Jaipur</option>
+          </select>
+        </div>
+
+        <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-medium">
+          Submit Transaction
+        </button>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    // Supabase Initialization
+    const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
+    const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser = null;
+
+    async function initApp() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        window.location.href = '/login.html'; // Redirect if not authenticated
+        return;
+      }
+
+      // Fetch profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      currentUser = profile;
+      document.getElementById('user-info').innerText = `${profile.full_name} (${profile.city}) ${profile.is_admin ? '[Admin]' : ''}`;
+
+      // Adjust forms based on role
+      if (profile.city !== 'Delhi') {
+        document.getElementById('tx-type').querySelector('option[value="INWARD_VENDOR"]').remove();
+        document.getElementById('tx-type').querySelector('option[value="TRANSFER_OUT"]').remove();
+      }
+
+      loadInventory();
+    }
+
+    async function loadInventory() {
+      const { data: inventory } = await supabase.from('inventory').select('*');
+      const grid = document.getElementById('stock-grid');
+      grid.innerHTML = '';
+
+      inventory.forEach(item => {
+        grid.innerHTML += `
+          <div class="bg-white p-4 rounded border border-slate-200">
+            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">${item.city}</span>
+            <div class="text-xl font-bold mt-2">${item.flyer_type}</div>
+            <div class="text-sm text-slate-500">Stock: <span class="font-bold text-slate-800">${item.quantity}</span> units</div>
+          </div>
+        `;
+      });
+    }
+
+    function toggleFields() {
+      const type = document.getElementById('tx-type').value;
+      document.getElementById('field-vendor').classList.toggle('hidden', type !== 'INWARD_VENDOR');
+      document.getElementById('field-customer').classList.toggle('hidden', type !== 'OUTWARD_CUSTOMER');
+      document.getElementById('field-transfer').classList.toggle('hidden', type !== 'TRANSFER_OUT');
+    }
+
+    document.getElementById('tx-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const type = document.getElementById('tx-type').value;
+      const flyer = document.getElementById('flyer-type').value;
+      const qty = parseInt(document.getElementById('qty').value);
+      const vendor = document.getElementById('vendor-name').value;
+      const customerId = document.getElementById('customer-id').value;
+      const destCity = document.getElementById('dest-city').value;
+
+      const { error } = await supabase.rpc('process_flyer_transaction', {
+        p_type: type,
+        p_flyer: flyer,
+        p_qty: qty,
+        p_src_city: currentUser.city,
+        p_dest_city: type === 'INWARD_VENDOR' ? 'Delhi' : (type === 'TRANSFER_OUT' ? destCity : null),
+        p_vendor: type === 'INWARD_VENDOR' ? vendor : null,
+        p_customer_id: type === 'OUTWARD_CUSTOMER' ? customerId : null,
+        p_user_id: currentUser.id
+      });
+
+      if (error) {
+        alert('Transaction Failed: ' + error.message);
+      } else {
+        alert('Transaction Recorded Successfully!');
+        document.getElementById('tx-form').reset();
+        loadInventory();
+      }
+    });
+
+    initApp();
+  </script>
+</body>
+</html>
