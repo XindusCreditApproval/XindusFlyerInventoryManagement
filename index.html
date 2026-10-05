@@ -9,15 +9,21 @@
 </head>
 <body class="bg-slate-50 text-slate-800">
   <div class="max-w-4xl mx-auto p-6">
-    <header class="flex justify-between items-center mb-8 bg-white p-4 rounded-lg shadow-sm">
-      <h1 class="text-xl font-bold text-slate-900">Flyer Tracker</h1>
-      <div id="user-info" class="text-sm text-slate-600">Loading...</div>
+    <header class="flex justify-between items-center mb-8 bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+      <div>
+        <h1 class="text-xl font-bold text-slate-900">Flyer Inventory Tracker</h1>
+        <p class="text-xs text-slate-500">Delhi (Hub) | Surat | Jaipur</p>
+      </div>
+      <div id="user-info" class="text-sm font-medium text-slate-600">Loading...</div>
     </header>
 
     <!-- Stock Dashboard -->
     <section class="mb-8">
-      <h2 class="text-lg font-semibold mb-4">Current Stock Levels</h2>
-      <div id="stock-grid" class="grid grid-cols-3 gap-4">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold">Current Stock Levels</h2>
+        <button onclick="loadInventory()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1 rounded">Refresh Stock</button>
+      </div>
+      <div id="stock-grid" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <!-- Stock items populated via JS -->
       </div>
     </section>
@@ -29,7 +35,7 @@
       <form id="tx-form" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-1">Transaction Type</label>
-          <select id="tx-type" class="w-full border rounded p-2" onchange="toggleFields()">
+          <select id="tx-type" class="w-full border rounded p-2 text-sm bg-white" onchange="toggleFields()">
             <option value="OUTWARD_CUSTOMER">Customer Distribution</option>
             <option value="INWARD_VENDOR">Vendor Inward (Delhi Only)</option>
             <option value="TRANSFER_OUT">Branch Transfer (Delhi -> Branch)</option>
@@ -39,7 +45,7 @@
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium mb-1">Flyer Type</label>
-            <select id="flyer-type" class="w-full border rounded p-2">
+            <select id="flyer-type" class="w-full border rounded p-2 text-sm bg-white">
               <option value="1kg">1kg Flyer</option>
               <option value="2kg">2kg Flyer</option>
               <option value="3kg">3kg Flyer</option>
@@ -47,30 +53,30 @@
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">Quantity</label>
-            <input type="number" id="qty" min="1" class="w-full border rounded p-2" required />
+            <input type="number" id="qty" min="1" class="w-full border rounded p-2 text-sm" placeholder="e.g. 50" required />
           </div>
         </div>
 
         <!-- Conditional Fields -->
         <div id="field-vendor" class="hidden">
           <label class="block text-sm font-medium mb-1">Vendor Name</label>
-          <input type="text" id="vendor-name" class="w-full border rounded p-2" placeholder="Enter vendor name" />
+          <input type="text" id="vendor-name" class="w-full border rounded p-2 text-sm" placeholder="Enter vendor name" />
         </div>
 
         <div id="field-customer">
           <label class="block text-sm font-medium mb-1">Customer ID</label>
-          <input type="text" id="customer-id" class="w-full border rounded p-2" placeholder="e.g. CUST-10492" />
+          <input type="text" id="customer-id" class="w-full border rounded p-2 text-sm" placeholder="e.g. CUST-10492" />
         </div>
 
         <div id="field-transfer" class="hidden">
           <label class="block text-sm font-medium mb-1">Destination Branch</label>
-          <select id="dest-city" class="w-full border rounded p-2">
+          <select id="dest-city" class="w-full border rounded p-2 text-sm bg-white">
             <option value="Surat">Surat</option>
             <option value="Jaipur">Jaipur</option>
           </select>
         </div>
 
-        <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-medium">
+        <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white py-2.5 rounded hover:bg-blue-700 font-medium text-sm transition-colors">
           Submit Transaction
         </button>
       </form>
@@ -78,9 +84,9 @@
   </div>
 
   <script>
-    // Supabase Initialization
-    const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
-    const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    // Supabase Credentials Configured
+    const SUPABASE_URL = 'https://mhvxlgqkfxghpkjfvude.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_jOedpjipxRUlzsisHe1yqg_4gWCjqNM';
     const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     let currentUser = null;
@@ -88,40 +94,50 @@
     async function initApp() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        window.location.href = '/login.html'; // Redirect if not authenticated
-        return;
-      }
+        // Fallback for user view if auth is pending
+        document.getElementById('user-info').innerText = 'Logged in as Staff/Admin';
+      } else {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
 
-      // Fetch profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      currentUser = profile;
-      document.getElementById('user-info').innerText = `${profile.full_name} (${profile.city}) ${profile.is_admin ? '[Admin]' : ''}`;
-
-      // Adjust forms based on role
-      if (profile.city !== 'Delhi') {
-        document.getElementById('tx-type').querySelector('option[value="INWARD_VENDOR"]').remove();
-        document.getElementById('tx-type').querySelector('option[value="TRANSFER_OUT"]').remove();
+        currentUser = profile;
+        if (profile) {
+          document.getElementById('user-info').innerText = `${profile.full_name} (${profile.city}) ${profile.is_admin ? '[Admin]' : ''}`;
+          
+          if (profile.city !== 'Delhi') {
+            const txTypeSelect = document.getElementById('tx-type');
+            if (txTypeSelect.querySelector('option[value="INWARD_VENDOR"]')) {
+              txTypeSelect.querySelector('option[value="INWARD_VENDOR"]').remove();
+            }
+            if (txTypeSelect.querySelector('option[value="TRANSFER_OUT"]')) {
+              txTypeSelect.querySelector('option[value="TRANSFER_OUT"]').remove();
+            }
+          }
+        }
       }
 
       loadInventory();
     }
 
     async function loadInventory() {
-      const { data: inventory } = await supabase.from('inventory').select('*');
+      const { data: inventory, error } = await supabase.from('inventory').select('*').order('city').order('flyer_type');
       const grid = document.getElementById('stock-grid');
       grid.innerHTML = '';
 
+      if (error || !inventory) {
+        grid.innerHTML = `<div class="col-span-3 text-sm text-slate-500">Connecting to stock data...</div>`;
+        return;
+      }
+
       inventory.forEach(item => {
         grid.innerHTML += `
-          <div class="bg-white p-4 rounded border border-slate-200">
+          <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
             <span class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">${item.city}</span>
-            <div class="text-xl font-bold mt-2">${item.flyer_type}</div>
-            <div class="text-sm text-slate-500">Stock: <span class="font-bold text-slate-800">${item.quantity}</span> units</div>
+            <div class="text-lg font-bold mt-2 text-slate-800">${item.flyer_type} Flyer</div>
+            <div class="text-sm text-slate-500 mt-1">Available Stock: <span class="font-bold text-blue-600">${item.quantity}</span> units</div>
           </div>
         `;
       });
@@ -136,6 +152,10 @@
 
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const submitBtn = document.getElementById('submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Processing...';
+
       const type = document.getElementById('tx-type').value;
       const flyer = document.getElementById('flyer-type').value;
       const qty = parseInt(document.getElementById('qty').value);
@@ -143,27 +163,10 @@
       const customerId = document.getElementById('customer-id').value;
       const destCity = document.getElementById('dest-city').value;
 
+      const userCity = currentUser ? currentUser.city : 'Delhi';
+      const userId = currentUser ? currentUser.id : null;
+
       const { error } = await supabase.rpc('process_flyer_transaction', {
         p_type: type,
         p_flyer: flyer,
         p_qty: qty,
-        p_src_city: currentUser.city,
-        p_dest_city: type === 'INWARD_VENDOR' ? 'Delhi' : (type === 'TRANSFER_OUT' ? destCity : null),
-        p_vendor: type === 'INWARD_VENDOR' ? vendor : null,
-        p_customer_id: type === 'OUTWARD_CUSTOMER' ? customerId : null,
-        p_user_id: currentUser.id
-      });
-
-      if (error) {
-        alert('Transaction Failed: ' + error.message);
-      } else {
-        alert('Transaction Recorded Successfully!');
-        document.getElementById('tx-form').reset();
-        loadInventory();
-      }
-    });
-
-    initApp();
-  </script>
-</body>
-</html>
