@@ -101,7 +101,7 @@
       const { data: inventory, error } = await supabase.from('inventory').select('*').order('city');
 
       if (error || !inventory || inventory.length === 0) {
-        grid.innerHTML = `<div class="col-span-3 text-red-500 text-sm">Failed to load stock. Run initial SQL query in Supabase.</div>`;
+        grid.innerHTML = `<div class="col-span-3 text-red-500 text-sm">Failed to load stock. Please run SQL script in Supabase.</div>`;
         return;
       }
 
@@ -147,47 +147,20 @@
       const destCity = document.getElementById('dest-city').value;
 
       try {
-        // Direct Inventory Update Mechanism
+        // Direct Stock Update
         if (type === 'INWARD_VENDOR') {
           const { data: curr } = await supabase.from('inventory').select('quantity').eq('city', 'Delhi').eq('flyer_type', flyer).single();
           const newQty = (curr ? curr.quantity : 0) + qty;
-          await supabase.from('inventory').update({ quantity: newQty }).eq('city', 'Delhi').eq('flyer_type', flyer);
+          const { error: errUp } = await supabase.from('inventory').update({ quantity: newQty }).eq('city', 'Delhi').eq('flyer_type', flyer);
+          if (errUp) throw errUp;
         } else if (type === 'OUTWARD_CUSTOMER') {
           const { data: curr } = await supabase.from('inventory').select('quantity').eq('city', srcCity).eq('flyer_type', flyer).single();
           const newQty = Math.max(0, (curr ? curr.quantity : 0) - qty);
-          await supabase.from('inventory').update({ quantity: newQty }).eq('city', srcCity).eq('flyer_type', flyer);
+          const { error: errUp } = await supabase.from('inventory').update({ quantity: newQty }).eq('city', srcCity).eq('flyer_type', flyer);
+          if (errUp) throw errUp;
         } else if (type === 'TRANSFER_OUT') {
           const { data: srcCurr } = await supabase.from('inventory').select('quantity').eq('city', 'Delhi').eq('flyer_type', flyer).single();
           const { data: destCurr } = await supabase.from('inventory').select('quantity').eq('city', destCity).eq('flyer_type', flyer).single();
           
           await supabase.from('inventory').update({ quantity: Math.max(0, (srcCurr ? srcCurr.quantity : 0) - qty) }).eq('city', 'Delhi').eq('flyer_type', flyer);
-          await supabase.from('inventory').update({ quantity: (destCurr ? destCurr.quantity : 0) + qty }).eq('city', destCity).eq('flyer_type', flyer);
-        }
-
-        // Save transaction history
-        await supabase.from('transactions').insert([{
-          transaction_type: type,
-          flyer_type: flyer,
-          quantity: qty,
-          source_city: srcCity,
-          destination_city: type === 'TRANSFER_OUT' ? destCity : null,
-          vendor_name: type === 'INWARD_VENDOR' ? vendor : null,
-          customer_id: type === 'OUTWARD_CUSTOMER' ? customerId : null
-        }]);
-
-        alert('✅ SUCCESS: Transaction recorded successfully!');
-        document.getElementById('tx-form').reset();
-        toggleFields();
-        loadInventory();
-      } catch (err) {
-        alert('❌ ERROR: ' + err.message);
-      }
-
-      submitBtn.disabled = false;
-      submitBtn.innerText = 'Submit Transaction';
-    });
-
-    loadInventory();
-  </script>
-</body>
-</html>
+          await supabase.from('inventory').update({ quantity: (destCurr ? destCurr
