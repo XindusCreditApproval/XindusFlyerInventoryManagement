@@ -14,17 +14,17 @@
         <h1 class="text-xl font-bold text-slate-900">Flyer Inventory Tracker</h1>
         <p class="text-xs text-slate-500">Delhi (Hub) | Surat | Jaipur</p>
       </div>
-      <div id="user-info" class="text-sm font-medium text-slate-600">Loading...</div>
+      <div id="user-info" class="text-sm font-medium text-blue-600">Active Session</div>
     </header>
 
     <!-- Stock Dashboard -->
     <section class="mb-8">
       <div class="flex justify-between items-center mb-4">
         <h2 class="text-lg font-semibold">Current Stock Levels</h2>
-        <button onclick="loadInventory()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1 rounded">Refresh Stock</button>
+        <button onclick="loadInventory()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1 rounded">Refresh Stock</button>
       </div>
       <div id="stock-grid" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <!-- Stock items populated via JS -->
+        <div class="col-span-3 text-slate-400 text-sm">Loading stock data...</div>
       </div>
     </section>
 
@@ -37,7 +37,7 @@
           <label class="block text-sm font-medium mb-1">Transaction Type</label>
           <select id="tx-type" class="w-full border rounded p-2 text-sm bg-white" onchange="toggleFields()">
             <option value="OUTWARD_CUSTOMER">Customer Distribution</option>
-            <option value="INWARD_VENDOR">Vendor Inward (Delhi Only)</option>
+            <option value="INWARD_VENDOR">Vendor Inward (Delhi Hub)</option>
             <option value="TRANSFER_OUT">Branch Transfer (Delhi -> Branch)</option>
           </select>
         </div>
@@ -52,20 +52,28 @@
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1">Quantity</label>
+            <label class="block text-sm font-medium mb-1">Quantity *</label>
             <input type="number" id="qty" min="1" class="w-full border rounded p-2 text-sm" placeholder="e.g. 50" required />
           </div>
         </div>
 
-        <!-- Conditional Fields -->
+        <div>
+          <label class="block text-sm font-medium mb-1">City / Branch</label>
+          <select id="src-city" class="w-full border rounded p-2 text-sm bg-white">
+            <option value="Delhi">Delhi (Main Hub)</option>
+            <option value="Surat">Surat</option>
+            <option value="Jaipur">Jaipur</option>
+          </select>
+        </div>
+
         <div id="field-vendor" class="hidden">
           <label class="block text-sm font-medium mb-1">Vendor Name</label>
-          <input type="text" id="vendor-name" class="w-full border rounded p-2 text-sm" placeholder="Enter vendor name" />
+          <input type="text" id="vendor-name" class="w-full border rounded p-2 text-sm" placeholder="Vendor Name" />
         </div>
 
         <div id="field-customer">
-          <label class="block text-sm font-medium mb-1">Customer ID</label>
-          <input type="text" id="customer-id" class="w-full border rounded p-2 text-sm" placeholder="e.g. CUST-10492" />
+          <label class="block text-sm font-medium mb-1">Customer ID *</label>
+          <input type="text" id="customer-id" class="w-full border rounded p-2 text-sm" placeholder="e.g. CUST-10492" required />
         </div>
 
         <div id="field-transfer" class="hidden">
@@ -76,7 +84,7 @@
           </select>
         </div>
 
-        <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white py-2.5 rounded hover:bg-blue-700 font-medium text-sm transition-colors">
+        <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white py-2.5 rounded hover:bg-blue-700 font-semibold text-sm transition-colors">
           Submit Transaction
         </button>
       </form>
@@ -84,60 +92,26 @@
   </div>
 
   <script>
-    // Supabase Credentials Configured
     const SUPABASE_URL = 'https://mhvxlgqkfxghpkjfvude.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_jOedpjipxRUlzsisHe1yqg_4gWCjqNM';
     const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    let currentUser = null;
-
-    async function initApp() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        // Fallback for user view if auth is pending
-        document.getElementById('user-info').innerText = 'Logged in as Staff/Admin';
-      } else {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-
-        currentUser = profile;
-        if (profile) {
-          document.getElementById('user-info').innerText = `${profile.full_name} (${profile.city}) ${profile.is_admin ? '[Admin]' : ''}`;
-          
-          if (profile.city !== 'Delhi') {
-            const txTypeSelect = document.getElementById('tx-type');
-            if (txTypeSelect.querySelector('option[value="INWARD_VENDOR"]')) {
-              txTypeSelect.querySelector('option[value="INWARD_VENDOR"]').remove();
-            }
-            if (txTypeSelect.querySelector('option[value="TRANSFER_OUT"]')) {
-              txTypeSelect.querySelector('option[value="TRANSFER_OUT"]').remove();
-            }
-          }
-        }
-      }
-
-      loadInventory();
-    }
-
     async function loadInventory() {
-      const { data: inventory, error } = await supabase.from('inventory').select('*').order('city').order('flyer_type');
       const grid = document.getElementById('stock-grid');
-      grid.innerHTML = '';
+      const { data: inventory, error } = await supabase.from('inventory').select('*').order('city');
 
-      if (error || !inventory) {
-        grid.innerHTML = `<div class="col-span-3 text-sm text-slate-500">Connecting to stock data...</div>`;
+      if (error || !inventory || inventory.length === 0) {
+        grid.innerHTML = `<div class="col-span-3 text-red-500 text-sm">Failed to load stock. Run initial SQL query in Supabase.</div>`;
         return;
       }
 
+      grid.innerHTML = '';
       inventory.forEach(item => {
         grid.innerHTML += `
           <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
             <span class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">${item.city}</span>
             <div class="text-lg font-bold mt-2 text-slate-800">${item.flyer_type} Flyer</div>
-            <div class="text-sm text-slate-500 mt-1">Available Stock: <span class="font-bold text-blue-600">${item.quantity}</span> units</div>
+            <div class="text-sm text-slate-500 mt-1">Available: <span class="font-bold text-blue-600">${item.quantity}</span> units</div>
           </div>
         `;
       });
@@ -145,9 +119,17 @@
 
     function toggleFields() {
       const type = document.getElementById('tx-type').value;
+      const custField = document.getElementById('customer-id');
+      
       document.getElementById('field-vendor').classList.toggle('hidden', type !== 'INWARD_VENDOR');
       document.getElementById('field-customer').classList.toggle('hidden', type !== 'OUTWARD_CUSTOMER');
       document.getElementById('field-transfer').classList.toggle('hidden', type !== 'TRANSFER_OUT');
+
+      if (type === 'OUTWARD_CUSTOMER') {
+        custField.setAttribute('required', 'required');
+      } else {
+        custField.removeAttribute('required');
+      }
     }
 
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
@@ -159,14 +141,53 @@
       const type = document.getElementById('tx-type').value;
       const flyer = document.getElementById('flyer-type').value;
       const qty = parseInt(document.getElementById('qty').value);
+      const srcCity = document.getElementById('src-city').value;
       const vendor = document.getElementById('vendor-name').value;
       const customerId = document.getElementById('customer-id').value;
       const destCity = document.getElementById('dest-city').value;
 
-      const userCity = currentUser ? currentUser.city : 'Delhi';
-      const userId = currentUser ? currentUser.id : null;
+      try {
+        // Direct Inventory Update Mechanism
+        if (type === 'INWARD_VENDOR') {
+          const { data: curr } = await supabase.from('inventory').select('quantity').eq('city', 'Delhi').eq('flyer_type', flyer).single();
+          const newQty = (curr ? curr.quantity : 0) + qty;
+          await supabase.from('inventory').update({ quantity: newQty }).eq('city', 'Delhi').eq('flyer_type', flyer);
+        } else if (type === 'OUTWARD_CUSTOMER') {
+          const { data: curr } = await supabase.from('inventory').select('quantity').eq('city', srcCity).eq('flyer_type', flyer).single();
+          const newQty = Math.max(0, (curr ? curr.quantity : 0) - qty);
+          await supabase.from('inventory').update({ quantity: newQty }).eq('city', srcCity).eq('flyer_type', flyer);
+        } else if (type === 'TRANSFER_OUT') {
+          const { data: srcCurr } = await supabase.from('inventory').select('quantity').eq('city', 'Delhi').eq('flyer_type', flyer).single();
+          const { data: destCurr } = await supabase.from('inventory').select('quantity').eq('city', destCity).eq('flyer_type', flyer).single();
+          
+          await supabase.from('inventory').update({ quantity: Math.max(0, (srcCurr ? srcCurr.quantity : 0) - qty) }).eq('city', 'Delhi').eq('flyer_type', flyer);
+          await supabase.from('inventory').update({ quantity: (destCurr ? destCurr.quantity : 0) + qty }).eq('city', destCity).eq('flyer_type', flyer);
+        }
 
-      const { error } = await supabase.rpc('process_flyer_transaction', {
-        p_type: type,
-        p_flyer: flyer,
-        p_qty: qty,
+        // Save transaction history
+        await supabase.from('transactions').insert([{
+          transaction_type: type,
+          flyer_type: flyer,
+          quantity: qty,
+          source_city: srcCity,
+          destination_city: type === 'TRANSFER_OUT' ? destCity : null,
+          vendor_name: type === 'INWARD_VENDOR' ? vendor : null,
+          customer_id: type === 'OUTWARD_CUSTOMER' ? customerId : null
+        }]);
+
+        alert('✅ SUCCESS: Transaction recorded successfully!');
+        document.getElementById('tx-form').reset();
+        toggleFields();
+        loadInventory();
+      } catch (err) {
+        alert('❌ ERROR: ' + err.message);
+      }
+
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Submit Transaction';
+    });
+
+    loadInventory();
+  </script>
+</body>
+</html>
