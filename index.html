@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flyer Inventory & Distribution Tracker</title>
+  <title>Flyer Inventory Tracker</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -21,18 +21,18 @@
     <section class="mb-8">
       <div class="flex justify-between items-center mb-4">
         <h2 class="text-lg font-semibold">Current Stock Levels</h2>
-        <button onclick="loadInventory()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1 rounded">Refresh Stock</button>
+        <button type="button" onclick="loadInventory()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1 rounded">Refresh Stock</button>
       </div>
       <div id="stock-grid" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="col-span-3 text-slate-400 text-sm">Loading stock data...</div>
       </div>
     </section>
 
-    <!-- Action Forms -->
+    <!-- Action Form -->
     <section class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
       <h2 class="text-lg font-semibold mb-4">Record Transaction</h2>
       
-      <form id="tx-form" class="space-y-4">
+      <form id="tx-form" onsubmit="handleTransaction(event)" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-1">Transaction Type</label>
           <select id="tx-type" class="w-full border rounded p-2 text-sm bg-white" onchange="toggleFields()">
@@ -98,23 +98,23 @@
 
     async function loadInventory() {
       const grid = document.getElementById('stock-grid');
-      const { data: inventory, error } = await supabase.from('inventory').select('*').order('city');
+      try {
+        const { data: inventory, error } = await supabase.from('inventory').select('*').order('city');
+        if (error) throw error;
 
-      if (error || !inventory || inventory.length === 0) {
-        grid.innerHTML = `<div class="col-span-3 text-red-500 text-sm">Failed to load stock. Please run SQL script in Supabase.</div>`;
-        return;
+        grid.innerHTML = '';
+        inventory.forEach(item => {
+          grid.innerHTML += `
+            <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">${item.city}</span>
+              <div class="text-lg font-bold mt-2 text-slate-800">${item.flyer_type} Flyer</div>
+              <div class="text-sm text-slate-500 mt-1">Available: <span class="font-bold text-blue-600">${item.quantity}</span> units</div>
+            </div>
+          `;
+        });
+      } catch (err) {
+        grid.innerHTML = `<div class="col-span-3 text-red-500 text-sm">Error loading stock: ${err.message}</div>`;
       }
-
-      grid.innerHTML = '';
-      inventory.forEach(item => {
-        grid.innerHTML += `
-          <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">${item.city}</span>
-            <div class="text-lg font-bold mt-2 text-slate-800">${item.flyer_type} Flyer</div>
-            <div class="text-sm text-slate-500 mt-1">Available: <span class="font-bold text-blue-600">${item.quantity}</span> units</div>
-          </div>
-        `;
-      });
     }
 
     function toggleFields() {
@@ -132,7 +132,7 @@
       }
     }
 
-    document.getElementById('tx-form').addEventListener('submit', async (e) => {
+    async function handleTransaction(e) {
       e.preventDefault();
       const submitBtn = document.getElementById('submit-btn');
       submitBtn.disabled = true;
@@ -147,20 +147,49 @@
       const destCity = document.getElementById('dest-city').value;
 
       try {
-        // Direct Stock Update
         if (type === 'INWARD_VENDOR') {
           const { data: curr } = await supabase.from('inventory').select('quantity').eq('city', 'Delhi').eq('flyer_type', flyer).single();
           const newQty = (curr ? curr.quantity : 0) + qty;
-          const { error: errUp } = await supabase.from('inventory').update({ quantity: newQty }).eq('city', 'Delhi').eq('flyer_type', flyer);
-          if (errUp) throw errUp;
+          const { error } = await supabase.from('inventory').update({ quantity: newQty }).eq('city', 'Delhi').eq('flyer_type', flyer);
+          if (error) throw error;
         } else if (type === 'OUTWARD_CUSTOMER') {
           const { data: curr } = await supabase.from('inventory').select('quantity').eq('city', srcCity).eq('flyer_type', flyer).single();
           const newQty = Math.max(0, (curr ? curr.quantity : 0) - qty);
-          const { error: errUp } = await supabase.from('inventory').update({ quantity: newQty }).eq('city', srcCity).eq('flyer_type', flyer);
-          if (errUp) throw errUp;
+          const { error } = await supabase.from('inventory').update({ quantity: newQty }).eq('city', srcCity).eq('flyer_type', flyer);
+          if (error) throw error;
         } else if (type === 'TRANSFER_OUT') {
           const { data: srcCurr } = await supabase.from('inventory').select('quantity').eq('city', 'Delhi').eq('flyer_type', flyer).single();
           const { data: destCurr } = await supabase.from('inventory').select('quantity').eq('city', destCity).eq('flyer_type', flyer).single();
           
           await supabase.from('inventory').update({ quantity: Math.max(0, (srcCurr ? srcCurr.quantity : 0) - qty) }).eq('city', 'Delhi').eq('flyer_type', flyer);
-          await supabase.from('inventory').update({ quantity: (destCurr ? destCurr
+          await supabase.from('inventory').update({ quantity: (destCurr ? destCurr.quantity : 0) + qty }).eq('city', destCity).eq('flyer_type', flyer);
+        }
+
+        const { error: txErr } = await supabase.from('transactions').insert([{
+          transaction_type: type,
+          flyer_type: flyer,
+          quantity: qty,
+          source_city: srcCity,
+          destination_city: type === 'TRANSFER_OUT' ? destCity : null,
+          vendor_name: type === 'INWARD_VENDOR' ? vendor : null,
+          customer_id: type === 'OUTWARD_CUSTOMER' ? customerId : null
+        }]);
+
+        if (txErr) throw txErr;
+
+        alert('✅ SUCCESS: Transaction recorded successfully!');
+        document.getElementById('tx-form').reset();
+        toggleFields();
+        loadInventory();
+      } catch (err) {
+        alert('❌ ERROR: ' + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Submit Transaction';
+      }
+    }
+
+    loadInventory();
+  </script>
+</body>
+</html>
